@@ -5,6 +5,8 @@ use base qw( Search::Query::Dialect );
 use Carp;
 use Data::Dump qw( dump );
 
+our $VERSION = '0.02';
+
 =head1 NAME
 
 Search::Query::Dialect::Native - the default query dialect
@@ -32,33 +34,35 @@ Returns the Query object as a normalized string.
 
 sub stringify {
     my $self = shift;
-    my $q = shift || $self;
+    my $tree = shift || $self;
 
-    my @leaves;
+    my @q;
     foreach my $prefix ( '+', '', '-' ) {
-        next if not $q->{$prefix};
-        for my $leaf ( @{ $q->{$prefix} } ) {
-            push @leaves, $prefix . $self->stringify_leaf($leaf);
+        next if not $tree->{$prefix};
+        for my $clause ( @{ $tree->{$prefix} } ) {
+            push @q, $prefix . $self->stringify_clause($clause);
         }
     }
 
-    return join " ", @leaves;
+    return join " ", @q;
 }
 
-=head2 stringify_leaf( I<leaf> )
+=head2 stringify_clause( I<leaf> )
 
-Called by stringify() to handle each leaf in the Query tree.
+Called by stringify() to handle each Clause in the Query tree.
 
 =cut
 
-sub stringify_leaf {
-    my $self = shift;
-    my $leaf = shift;
+sub stringify_clause {
+    my $self   = shift;
+    my $clause = shift;
 
-    return "(" . $self->stringify( $leaf->{value} ) . ")"
-        if $leaf->{op} eq '()';
-    my $quote = $leaf->{quote} || "";
-    return "$leaf->{field}$leaf->{op}$quote$leaf->{value}$quote";
+    if ( $clause->{op} eq '()' ) {
+        return "(" . $self->stringify( $clause->{value} ) . ")";
+    }
+    my $quote = $clause->{quote} || "";
+    return join( '',
+        $clause->{field}, $clause->{op}, $quote, $clause->{value}, $quote );
 }
 
 1;

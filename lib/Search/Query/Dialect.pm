@@ -2,12 +2,17 @@ package Search::Query::Dialect;
 use strict;
 use warnings;
 use Carp;
+use Data::Dump qw( dump );
 use overload
     '""'     => sub { $_[0]->stringify; },
     'bool'   => sub {1},
     fallback => 1;
 
 use base qw( Rose::ObjectX::CAF );
+use Data::Transformer;
+use Scalar::Util qw( blessed );
+
+our $VERSION = '0.02';
 
 =head1 NAME
 
@@ -61,7 +66,104 @@ to that of Search::QueryParser.
 
 sub tree {
     my $self = shift;
-    return {%$self};
+    my %tree = %$self;
+    my $transformer;
+    $transformer = Data::Transformer->new(
+        array => sub {
+            for my $obj ( @{ $_[0] } ) {
+                $obj = {%$obj};
+            }
+        },
+        hash => sub {
+            my $h = shift;
+            if ( blessed( $h->{value} ) ) {
+                $h->{value} = $h->{value}->tree;
+            }
+        },
+    );
+    $transformer->traverse( \%tree );
+    return \%tree;
+}
+
+=head2 walk( I<CODE> )
+
+Traverse a Dialect object, calling I<CODE> on each Clause.
+The I<CODE> reference should expect 4 arguments:
+
+=over
+
+=item
+
+The Clause object.
+
+=item
+
+The Dialect object.
+
+=item
+
+The I<CODE> reference.
+
+=item
+
+The prefix ("+", "-", and "") for the Clause.
+
+=back
+
+=cut
+
+sub walk {
+    my $self = shift;
+    my $code = shift;
+    if ( !$code or !ref($code) or ref($code) ne 'CODE' ) {
+        croak "CODE ref required";
+    }
+    my $tree = shift || $self;
+    foreach my $prefix ( '+', '', '-' ) {
+        next if !exists $tree->{$prefix};
+        for my $clause ( @{ $tree->{$prefix} } ) {
+
+            #warn "clause: " . dump $clause;
+            $code->( $clause, $tree, $code, $prefix );
+        }
+    }
+    return $tree;
+}
+
+=head2 add_or_clause( I<clause> )
+
+Add I<clause> as an "or" leaf to the Dialect object.
+
+=cut
+
+sub add_or_clause {
+    my $self = shift;
+    my $clause = shift or croak "Clause object required";
+    push( @{ $self->{""} }, $clause );
+}
+
+=head2 add_and_clause( I<clause> )
+
+Add I<clause> as an "and" leaf to the Dialect object.
+
+=cut
+
+sub add_and_clause {
+    my $self = shift;
+    my $clause = shift or croak "Clause object required";
+    push( @{ $self->{"+"} }, $clause );
+}
+
+=head2 add_not_clause( I<clause> )
+
+Add I<clause> as a "not" leaf to the Dialect object.
+
+=cut
+
+sub add_not_clause {
+    my $self = shift;
+    my $clause = shift or croak "Clause object required";
+    push( @{ $self->{"-"} }, $clause );
 }
 
 1;

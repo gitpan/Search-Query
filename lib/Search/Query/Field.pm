@@ -1,44 +1,53 @@
-package Search::Query;
-
-use warnings;
+package Search::Query::Field;
 use strict;
-use Search::Query::Parser;
+use warnings;
+use Carp;
+use base qw( Rose::ObjectX::CAF );
 
 our $VERSION = '0.02';
 
+__PACKAGE__->mk_accessors(qw( name alias_for ));
+
 =head1 NAME
 
-Search::Query - polyglot query parsing, with dialects
+Search::Query::Field - base class for query fields
 
 =head1 SYNOPSIS
 
- use Search::Query;
- 
- my $parser = Search::Query->parser();
- my $query  = $parser->parse('+hello -world now');
- print $query;  # same as print $query->stringify;
-
-=cut
+ my $field = Search::Query::Field->new( 
+    name        => 'foo',
+    alias_for   => [qw( bar bing )], 
+ );
 
 =head1 DESCRIPTION
 
-This class provides documentation and a single class method.
-
-This module started as a fork of the excellent Search::QueryParser module
-and was then rewritten to provide support for alternate query dialects.
+Search::Query::Field is a base class for implementing field
+validation and aliasing in search queries.
 
 =head1 METHODS
 
-=head2 parser
+This class is a subclass of Rose::ObjectX::CAF. Only new or overridden
+methods are documented here.
 
-Returns a Search::Query::Parser object.
+=head2 name
+
+Get/set the name of the field.
+
+=head2 alias_for
+
+Get/set the alternate names for the field. Can be a string or array ref.
+
+=head2 validate
+
+The base method always returns true.
 
 =cut
 
-sub parser {
-    my $class = shift;
-    return Search::Query::Parser->new(@_);
-}
+sub validate {1}
+
+1;
+
+__END__
 
 =head1 AUTHOR
 
@@ -96,5 +105,3 @@ by the Free Software Foundation; or the Artistic License.
 See http://dev.perl.org/licenses/ for more information.
 
 =cut
-
-1;    # End of Search::Query

@@ -1,6 +1,6 @@
 --- #YAML:1.0
 name:               Search-Query
-version:            0.01
+version:            0.02
 abstract:           polyglot query parsing, with dialects
 author:
     - Peter Karman <karman@cpan.org>
@@ -12,8 +12,10 @@ build_requires:
     ExtUtils::MakeMaker:  0
 requires:
     Data::Dump:          0
+    Data::Transformer:   0
     perl:                5.008003
     Rose::ObjectX::CAF:  0.03
+    Scalar::Util:        0
     Test::More:          0
 resources:
     bugtracker:  http://rt.cpan.org/NoAuth/Bugs.html?Dist=Search-Query

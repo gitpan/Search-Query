@@ -1,44 +1,60 @@
-package Search::Query;
-
-use warnings;
+package Search::Query::Clause;
 use strict;
-use Search::Query::Parser;
+use warnings;
+use Carp;
+use base qw( Rose::ObjectX::CAF );
+use Scalar::Util qw( blessed );
 
 our $VERSION = '0.02';
 
+__PACKAGE__->mk_accessors(qw( field op value quote ));
+
 =head1 NAME
 
-Search::Query - polyglot query parsing, with dialects
+Search::Query::Clause - part of a Dialect
 
 =head1 SYNOPSIS
 
- use Search::Query;
- 
- my $parser = Search::Query->parser();
- my $query  = $parser->parse('+hello -world now');
- print $query;  # same as print $query->stringify;
-
-=cut
+ my $clause = Search::Query::Clause->new(
+    field => 'color',
+    op    => '=',
+    value => 'green',
+ );
+ my $query = Search::Query->parser->parse("color=red");
+ $query->add_or_clause( $clause );
+ print $query; # +color=red color=green
 
 =head1 DESCRIPTION
 
-This class provides documentation and a single class method.
-
-This module started as a fork of the excellent Search::QueryParser module
-and was then rewritten to provide support for alternate query dialects.
+A Clause object represents a leaf in a Query Dialect tree.
 
 =head1 METHODS
 
-=head2 parser
+This class is a subclass of Rose::ObjectX::CAF. Only new or overridden
+methods are documented here.
 
-Returns a Search::Query::Parser object.
+=head2 field
+
+=head2 op
+
+=head2 value
+
+=head2 quote
+
+=head2 is_tree
+
+Returns true if the Clause has child Clauses.
 
 =cut
 
-sub parser {
-    my $class = shift;
-    return Search::Query::Parser->new(@_);
+sub is_tree {
+    my $self = shift;
+    return blessed( $self->{value} );
 }
+
+1;
+
+__END__
 
 =head1 AUTHOR
 
@@ -96,5 +112,3 @@ by the Free Software Foundation; or the Artistic License.
 See http://dev.perl.org/licenses/ for more information.
 
 =cut
-
-1;    # End of Search::Query
