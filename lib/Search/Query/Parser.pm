@@ -10,7 +10,7 @@ use Search::Query::Clause;
 use Search::Query::Field;
 use Scalar::Util qw( blessed weaken );
 
-our $VERSION = '0.06';
+our $VERSION = '0.07';
 
 __PACKAGE__->mk_accessors(
     qw(
@@ -22,6 +22,7 @@ __PACKAGE__->mk_accessors(
         and_regex
         or_regex
         not_regex
+        range_regex
         default_field
         default_op
         phrase_delim
@@ -33,7 +34,7 @@ __PACKAGE__->mk_accessors(
         )
 );
 
-__PACKAGE__->mk_ro_accessors(qw( error ));
+__PACKAGE__->mk_ro_accessors(qw( error fields ));
 
 my %DEFAULT = (
     term_regex  => qr/[^\s()]+/,
@@ -46,9 +47,10 @@ my %DEFAULT = (
     op_nofield_regex => qr/=~|!~|[~:#]/,
 
     # case insensitive
-    and_regex        => qr/AND|ET|UND|E/i,
-    or_regex         => qr/OR|OU|ODER|O/i,
+    and_regex        => qr/\&|AND|ET|UND|E/i,
+    or_regex         => qr/\||OR|OU|ODER|O/i,
     not_regex        => qr/NOT|PAS|NICHT|NON/i,
+    range_regex      => qr/\.\./,
     default_field    => undef,
     default_op       => ':',
     phrase_delim     => q/"/,
@@ -89,9 +91,9 @@ Search::Query::Parser - convert query strings into query objects
     op_nofield_regex => qr/=~|!~|[~:#]/,
 
     # case insensitive
-    and_regex      => qr/AND|ET|UND|E/i,
-    or_regex       => qr/OR|OU|ODER|O/i,
-    not_regex      => qr/NOT|PAS|NICHT|NON/i,
+    and_regex        => qr/\&|AND|ET|UND|E/i,
+    or_regex         => qr/\||OR|OU|ODER|O/i,
+    not_regex        => qr/NOT|PAS|NICHT|NON/i,
 
     default_field  => "",
     phrase_delim   => q/"/,
@@ -110,6 +112,143 @@ Search::Query::Parser - convert query strings into query objects
 
 Search::Query::Parser is a fork of Search::QueryParser
 that supports multiple query dialects.
+
+The Parser class transforms a query string into a Dialect object structure 
+to be handled by external search engines.
+
+The query string can contain simple terms, "exact phrases", field
+names and comparison operators, '+/-' prefixes, parentheses, and
+boolean connectors.
+
+The parser can be customized using regular expressions for specific
+notions of "term", "field name" or "operator"  -- see the L<new>
+method.
+
+The Dialect object resulting from a parsed query is a tree of terms
+and operators. Each Dialect can be re-serialized as a string
+using the stringify() method, or simply by printing the Dialect object,
+since the string-related Perl operations are overloaded using stringify().
+
+=head1 QUERY STRING
+
+The query string is decomposed into Clause objects, where 
+each Clause has an optional sign prefix, 
+an optional field name and comparison operator, 
+and a mandatory value.
+
+=head2 Sign prefix
+
+Prefix '+' means that the item is mandatory.
+Prefix '-' means that the item must be excluded.
+No prefix means that the item will be searched
+for, but is not mandatory.
+
+See also section L<Boolean connectors> below, which is another
+way to combine items into a query.
+
+=head2 Field name and comparison operator
+
+Internally, each query item has a field name and comparison 
+operator; if not written explicitly in the query, these
+take default values C<''> (empty field name) and 
+C<':'> (colon operator).
+
+Operators have a left operand (the field name) and 
+a right operand (the value to be compared with);
+for example, C<foo:bar> means "search documents containing 
+term 'bar' in field 'foo'", whereas C<foo=bar> means 
+"search documents where field 'foo' has exact value 'bar'".
+
+Here is the list of admitted operators with their intended meaning:
+
+=over
+
+=item C<:>
+
+treat value as a term to be searched within field. 
+This is the default operator.
+
+=item C<~> or C<=~>
+
+treat value as a regex; match field against the regex.
+
+=item C<!~>
+
+negation of above
+
+=item C<==> or C<=>, C<E<lt>=>, C<E<gt>=>, C<!=>, C<E<lt>>, C<E<gt>>
+
+classical relational operators
+
+=item C<#>
+
+Inclusion in the set of comma-separated integers supplied
+on the right-hand side. 
+
+=back
+
+Operators C<:>, C<~>, C<=~>, C<!~> and C<#> admit an empty 
+left operand (so the field name will be C<''>).
+Search engines will usually interpret this as 
+"any field" or "the whole data record". But see the B<default_field>
+feature.
+
+=head2 Value
+
+A value (right operand to a comparison operator) can be 
+
+=over
+
+=item *
+
+A term (as recognized by regex C<term_regex>, see L<new> method below).
+
+=item *
+
+A quoted phrase, i.e. a collection of terms within
+single or double quotes.
+
+Quotes can be used not only for "exact phrases", but also
+to prevent misinterpretation of some values : for example
+C<-2> would mean "value '2' with prefix '-'", 
+in other words "exclude term '2'", so if you want to search for
+value -2, you should write C<"-2"> instead.
+
+=item *
+
+A subquery within parentheses.
+Field names and operators distribute over parentheses, so for 
+example C<foo:(bar bie)> is equivalent to 
+C<foo:bar foo:bie>.
+
+Nested field names such as C<foo:(bar:bie)> are not allowed.
+
+Sign prefixes do not distribute : C<+(foo bar) +bie> is not
+equivalent to C<+foo +bar +bie>.
+
+=back
+
+=head2 Boolean connectors
+
+Queries can contain boolean connectors 'AND', 'OR', 'NOT'
+(or their equivalent in some other languages -- see the *_regex
+features in new()).
+This is mere syntactic sugar for the '+' and '-' prefixes :
+C<a AND b> is equivalent to C<+a +b>;
+C<a OR b> is equivalent to C<(a b)>;
+C<NOT a> is equivalent to C<-a>.
+C<+a OR b> does not make sense, 
+but it is translated into C<(a b)>, under the assumption
+that the user understands "OR" better than a 
+'+' prefix.
+C<-a OR b> does not make sense either, 
+but has no meaningful approximation, so it is rejected.
+
+Combinations of AND/OR clauses must be surrounded by
+parentheses, i.e. C<(a AND b) OR c> or C<a AND (b OR c)> are
+allowed, but C<a AND b OR c> is not.
+
+=head1 METHODS
 
 =head2 new
 
@@ -134,6 +273,8 @@ Parser object.
 =item or_regex
 
 =item not_regex
+
+=item range_regex
 
 =item default_field
 
@@ -220,20 +361,10 @@ defined.
 sub get_field {
     my $self = shift;
     my $name = shift or croak "name required";
-    if ( !exists $self->{_fields}->{$name} ) {
+    if ( !exists $self->{fields}->{$name} ) {
         return undef;
     }
-    return $self->{_fields}->{$name};
-}
-
-=head2 fields
-
-Returns the I<fields> structure set by set_fields().
-
-=cut
-
-sub fields {
-    return shift->{_fields};
+    return $self->{fields}->{$name};
 }
 
 =head2 set_fields( I<fields> )
@@ -241,11 +372,30 @@ sub fields {
 Set the I<fields> structure. Called internally by init()
 if you pass a C<fields> key/value pair to new().
 
+The structure of I<fields> may be one of the following:
+
+ my $fields = {
+    field1 => 1,
+    field2 => { alias_for => 'field1' },
+    field3 => Search::Query::Field->new( name => 'field3' ),
+    field4 => { alias_for => [qw( field1 field3 )] },
+ };
+ 
+ # or
+ 
+ my $fields = [
+    'field1',
+    { name => 'field2', alias_for => 'field1' },
+    Search::Query::Field->new( name => 'field3' ),
+    { name => 'field4', alias_for => [qw( field1 field3 )] },
+ ];
+
+
 =cut
 
 sub set_fields {
-    my $self = shift;
-    my $origfields = shift || $self->{fields};
+    my $self       = shift;
+    my $origfields = shift;
     if ( !defined $origfields ) {
         croak "fields required";
     }
@@ -299,8 +449,8 @@ sub set_fields {
         }
     }
 
-    $self->{_fields} = \%fields;
-    return $self->{_fields};
+    $self->{fields} = \%fields;
+    return $self->{fields};
 }
 
 =head2 parse( I<string> )
@@ -318,6 +468,7 @@ sub parse {
     my $q    = shift;
     croak "query required" unless defined $q;
     my $class = shift || $self->query_class;
+    $q = $class->preprocess($q);
     my ($query) = $self->_parse( $q, undef, undef, $class );
     if ( !defined $query ) {
         croak $self->error if $self->croak_on_error;
@@ -328,8 +479,9 @@ sub parse {
         $self->_expand($query);
         $self->_validate($query);
     }
-    $query->{_parser} = $self;
-    weaken( $query->{_parser} );
+    $query->{parser} = $self;
+
+    #weaken( $query->{parser} );    # TODO leaks possible?
 
     return $query;
 }
@@ -337,8 +489,8 @@ sub parse {
 sub _expand {
     my ( $self, $query ) = @_;
 
-    return if !exists $self->{_fields};
-    my $fields        = $self->{_fields};
+    return if !exists $self->{fields};
+    my $fields        = $self->{fields};
     my $query_class   = $self->{query_class};
     my $default_field = $self->{default_field};
 
@@ -406,7 +558,7 @@ sub _expand {
                     my $newfield
                         = bless( { "" => \@newfields }, $query_class );
                     $newfield->init( %{ $self->query_class_opts },
-                        _parser => $self );
+                        parser => $self );
 
                     $clause->op('()');
                     $clause->value($newfield);
@@ -429,7 +581,7 @@ sub _expand {
 sub _validate {
     my ( $self, $query ) = @_;
 
-    my $fields    = $self->{_fields};
+    my $fields    = $self->{fields};
     my $validator = sub {
         my ( $clause, $tree, $code, $prefix ) = @_;
         if ( $clause->is_tree ) {
@@ -474,6 +626,7 @@ sub _parse {
     my $op_regex         = $self->{op_regex};
     my $op_nofield_regex = $self->{op_nofield_regex};
     my $term_regex       = $self->{term_regex};
+    my $range_regex      = $self->{range_regex};
     my $clause_class     = $self->{clause_class};
 
     $str =~ s/^\s+//;    # remove leading spaces
@@ -497,6 +650,7 @@ LOOP:
             # try to parse sign prefix ('+', '-' or 'NOT')
             if    (s/^(\+|-)\s*//)         { $sign = $1; }
             elsif (s/^($not_regex)\b\s*//) { $sign = '-'; }
+            elsif (s/^\!\s*([^:=~])/$1/)   { $sign = '-'; }
 
             # try to parse field name and operator
             if (s/^"($field_regex)"\s*($op_regex)\s*//   # "field name" and op
@@ -540,28 +694,48 @@ LOOP:
                     $err = "no matching ) ";
                     last LOOP;
                 }
+
                 $clause = $clause_class->new(
                     field => '',
                     op    => '()',
                     value => bless( $r, $query_class ),    # re-bless
                 );
+
             }
             elsif (s/^($term_regex)\s*//) {    # parse a single term
-                $clause = $clause_class->new(
-                    field => $field,
-                    op    => ( $op || $parent_op || ( $field ? ":" : "" ) ),
-                    value => $1,
-                );
+                my $term = $1;
+                if ( $term =~ m/^($term_regex)$range_regex($term_regex)$/ ) {
+                    my $t1 = $1;
+                    my $t2 = $2;
+
+                    #warn "found range ($op $parent_op): $term => $t1 .. $t2";
+                    my $this_op = $op =~ m/\!/ ? '!..' : '..';
+                    $clause = $clause_class->new(
+                        field => $field,
+                        op    => $this_op,
+                        value => [ $t1, $t2 ],
+                    );
+                }
+                else {
+
+                    $clause = $clause_class->new(
+                        field => $field,
+                        op => ( $op || $parent_op || ( $field ? ":" : "" ) ),
+                        value => $term,
+                    );
+
+                }
             }
 
             # deal with boolean connectors
             my $post_bool = '';
-            if (s/^($and_regex)\b\s*//) {
+            if (s/^($and_regex)\s+//) {
                 $post_bool = 'AND';
             }
-            elsif (s/^($or_regex)\b\s*//) {
+            elsif (s/^($or_regex)\s+//) {
                 $post_bool = 'OR';
             }
+
             if (    $pre_bool
                 and $post_bool
                 and $pre_bool ne $post_bool )
@@ -596,11 +770,6 @@ LOOP:
         }
     }
 
-    # TODO allow all negative?
-    if ( !exists $q->{'+'} and !exists $q->{''} ) {
-        $err ||= "no positive value in query";
-    }
-
     # handle error
     if ($err) {
         $self->{error} = "[$s_orig] : $err";
@@ -613,7 +782,7 @@ LOOP:
         return ( $q, $str );
     }
     my $query
-        = $query_class->new( %{ $self->query_class_opts }, _parser => $self );
+        = $query_class->new( %{ $self->query_class_opts }, parser => $self );
     $query->{$_} = $q->{$_} for keys %$q;
     return ( $query, $str );
 }

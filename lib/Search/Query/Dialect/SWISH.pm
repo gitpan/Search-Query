@@ -1,41 +1,36 @@
-package Search::Query::Dialect::SQL;
+package Search::Query::Dialect::SWISH;
 use strict;
 use warnings;
 use base qw( Search::Query::Dialect );
 use Carp;
 use Data::Dump qw( dump );
-use Search::Query::Field::SQL;
+use Search::Query::Field::SWISH;
+
+our $VERSION = '0.07';
 
 __PACKAGE__->mk_accessors(
     qw(
         wildcard
-        quote_fields
         fuzzify
-        fuzzify2
-        like
-        quote_char
-        fuzzy_space
         )
 );
 
-our $VERSION = '0.07';
-
 =head1 NAME
 
-Search::Query::Dialect::SQL - SQL query dialect
+Search::Query::Dialect::SWISH - Swish query dialect
 
 =head1 SYNOPSIS
 
- my $query = Search::Query->parser( dialect => 'SQL' )->parse('foo');
+ my $query = Search::Query->parser( dialect => 'SWISH' )->parse('foo');
  print $query;
 
 =head1 DESCRIPTION
 
-Search::Query::Dialect::SQL is a query dialect for Query
+Search::Query::Dialect::SWISH is a query dialect for Query
 objects returned by a Search::Query::Parser instance.
 
-The SQL dialect class stringifies queries to work as SQL WHERE
-clauses. This behavior is similar to Search::QueryParser::SQL.
+The SWISH dialect class stringifies queries to work with Swish-e
+and Swish3 Native search engines.
 
 =head1 METHODS
 
@@ -46,43 +41,19 @@ methods are documented here.
 
 =head2 init
 
-Overrides the base method. Can accept the following params, which
-are also standard attribute accessors:
+Overrides base method and sets SWISH-appropriate defaults.
+Can take the following params, also available as standard attribute
+methods.
 
 =over
 
 =item wildcard
 
-Default value is C<%>.
-
-=item quote_fields
-
-Default value is "". Set to (for example) C<`> to quote each field name
-in stringify() as some SQL variants require that syntax (e.g. mysql).
-
-=item default_field
-
-Override the default field set in Search::Query::Parser.
+Default is '*'.
 
 =item fuzzify
 
-Append wildcard() to all terms.
-
-=item fuzzify2
-
-Prepend and append wildcard() to all terms.
-
-=item like
-
-The SQL reserved word for wildcard comparison. Default value is C<ILIKE>.
-
-=item quote_char
-
-The string to use for quoting strings. Default is C<'>.
-
-=item fuzzy_space
-
-The string to use to pad fuzzified terms. Default is a single space C< >.
+If true, a wildcard is automatically appended to each query term.
 
 =back
 
@@ -90,22 +61,23 @@ The string to use to pad fuzzified terms. Default is a single space C< >.
 
 sub init {
     my $self = shift;
+
     $self->SUPER::init(@_);
 
     #carp dump $self;
-    $self->{wildcard} ||= '%';
-    $self->{quote_fields} = '' unless exists $self->{quote_fields};
-    if ( !defined $self->parser->fields ) {
-        croak "You must set fields in the Search::Query::Parser";
+    $self->{wildcard} = '*';
+    if ( $self->parser->fields ) {
+        $self->{default_field} ||= $self->parser->default_field
+            || [ sort keys %{ $self->parser->fields } ];
     }
-    $self->{default_field} ||= $self->parser->default_field
-        || [ sort keys %{ $self->parser->fields } ];
+    else {
+        $self->{default_field} ||= $self->parser->default_field
+            || 'swishdefault';
+    }
     if ( $self->{default_field} and !ref( $self->{default_field} ) ) {
         $self->{default_field} = [ $self->{default_field} ];
     }
-    $self->{like} ||= 'ILIKE';
-    $self->{quote_char}  = q/'/ unless exists $self->{quote_char};
-    $self->{fuzzy_space} = ' '  unless exists $self->{fuzzy_space};
+
     return $self;
 }
 
@@ -118,7 +90,7 @@ Returns the Query object as a normalized string.
 my %op_map = (
     '+' => 'AND',
     ''  => 'OR',
-    '-' => 'AND',    # operator is munged
+    '-' => 'NOT',
 );
 
 sub stringify {
@@ -149,13 +121,10 @@ sub _doctor_value {
     if ( $self->fuzzify ) {
         $value .= '*' unless $value =~ m/[\*\%]/;
     }
-    elsif ( $self->fuzzify2 ) {
-        $value = "*$value*" unless $value =~ m/[\*\%]/;
-    }
 
     # normalize wildcard
     my $wildcard = $self->wildcard;
-    $value =~ s/\*/$wildcard/g;
+    $value =~ s/[\*\%]/$wildcard/g;
 
     return $value;
 }
@@ -171,19 +140,19 @@ sub stringify_clause {
     my $clause = shift;
     my $prefix = shift;
 
+    #warn dump $clause;
+    #warn "prefix = '$prefix'";
+
     if ( $clause->{op} eq '()' ) {
         if ( $clause->has_children and $clause->has_children == 1 ) {
             return $self->stringify( $clause->{value} );
         }
         else {
-            return "(" . $self->stringify( $clause->{value} ) . ")";
+            return
+                ( $prefix eq '-' ? 'NOT ' : '' ) . "("
+                . $self->stringify( $clause->{value} ) . ")";
         }
     }
-
-    # optional
-    my $quote_fields = $self->quote_fields;
-
-    my $fuzzy_space = $self->fuzzy_space;
 
     # make sure we have a field
     my @fields
@@ -192,7 +161,12 @@ sub stringify_clause {
         : ( @{ $self->_get_default_field } );
 
     # what value
-    my $value = $self->_doctor_value($clause);
+    my $value
+        = ref $clause->{value}
+        ? $clause->{value}
+        : $self->_doctor_value($clause);
+
+    my $wildcard = $self->wildcard;
 
     # normalize operator
     my $op = $clause->{op} || "=";
@@ -206,57 +180,82 @@ sub stringify_clause {
         $op = $prefix eq '-' ? '!~' : '~';
     }
 
+    my $quote = $clause->quote || '';
+
     my @buf;
 NAME: for my $name (@fields) {
         my $field = $self->_get_field($name);
-        $value =~ s/\%//g if $field->is_int;
-        my $this_op;
-
-        # whether we quote depends on the field (column) type
-        my $quote = $field->is_int ? "" : $self->quote_char;
-
-        # fuzzy
-        if ( $op =~ m/\~/ ) {
-
-            # negation
-            if ( $op eq '!~' ) {
-                if ( $field->is_int ) {
-                    $this_op = $field->fuzzy_not_op;
-                }
-                else {
-                    $this_op
-                        = $fuzzy_space . $field->fuzzy_not_op . $fuzzy_space;
-                }
-            }
-
-            # standard fuzzy
-            else {
-                if ( $field->is_int ) {
-                    $this_op = $field->fuzzy_op;
-                }
-                else {
-                    $this_op = $fuzzy_space . $field->fuzzy_op . $fuzzy_space;
-                }
-            }
-        }
-        else {
-            $this_op = $op;
-        }
 
         if ( defined $field->callback ) {
-            push( @buf, $field->callback->( $field, $this_op, $value ) );
+            push( @buf, $field->callback->( $field, $op, $value ) );
             next NAME;
         }
 
-        #warn dump [ $quote_fields, $name, $this_op, $quote, $value ];
+        #warn dump [ $name, $op, $quote, $value ];
 
-        push(
-            @buf,
-            join( '',
-                $quote_fields, $name,  $quote_fields, $this_op,
-                $quote,        $value, $quote )
-        );
+        # invert fuzzy
+        if ( $op eq '!~' ) {
+            $value .= $wildcard unless $value =~ m/\Q$wildcard/;
+            push( @buf,
+                join( '', 'NOT ', $name, '=', qq/$quote$value$quote/ ) );
+        }
 
+        # fuzzy
+        elsif ( $op eq '~' ) {
+            $value .= $wildcard unless $value =~ m/\Q$wildcard/;
+            push( @buf, join( '', $name, '=', qq/$quote$value$quote/ ) );
+        }
+
+        # invert
+        elsif ( $op eq '!=' ) {
+            push( @buf,
+                join( '', 'NOT ', $name, '=', qq/$quote$value$quote/ ) );
+        }
+
+        # range
+        elsif ( $op eq '..' ) {
+            if ( ref $value ne 'ARRAY' or @$value != 2 ) {
+                croak "range of values must be a 2-element ARRAY";
+            }
+
+            # we support only numbers at this point
+            for my $v (@$value) {
+                if ( $v =~ m/\D/ ) {
+                    croak "non-numeric range values are not supported: $v";
+                }
+            }
+
+            my @range = ( $value->[0] .. $value->[1] );
+            push( @buf,
+                join( '', $name, '=', '(', join( ' OR ', @range ), ')' ) );
+
+        }
+
+        # invert range
+        elsif ( $op eq '!..' ) {
+            if ( ref $value ne 'ARRAY' or @$value != 2 ) {
+                croak "range of values must be a 2-element ARRAY";
+            }
+
+            # we support only numbers at this point
+            for my $v (@$value) {
+                if ( $v =~ m/\D/ ) {
+                    croak "non-numeric range values are not supported: $v";
+                }
+            }
+
+            my @range = ( $value->[0] .. $value->[1] );
+            push(
+                @buf,
+                join( '',
+                    'NOT ', $name, '=', '( ', join( ' ', @range ), ' )' )
+            );
+        }
+
+        # standard
+        else {
+            push( @buf, join( '', $name, '=', qq/$quote$value$quote/ ) );
+        }
     }
     my $joiner = $prefix eq '-' ? ' AND ' : ' OR ';
     return
@@ -265,24 +264,13 @@ NAME: for my $name (@fields) {
         . ( scalar(@buf) > 1 ? ')' : '' );
 }
 
-sub _get_field {
-    my $self  = shift;
-    my $field = $self->SUPER::_get_field(@_);
-
-    # fix up the operator based on our like() setting
-    $field->fuzzy_op( $self->like ) if !$field->is_int;
-    $field->fuzzy_not_op( 'NOT ' . $self->like ) if !$field->is_int;
-
-    return $field;
-}
-
 =head2 field_class
 
-Returns "Search::Query::Field::SQL".
+Returns "Search::Query::Field::SWISH".
 
 =cut
 
-sub field_class {'Search::Query::Field::SQL'}
+sub field_class {'Search::Query::Field::SWISH'}
 
 1;
 

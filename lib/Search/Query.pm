@@ -11,11 +11,11 @@ use Module::Pluggable
     search_path => ['Search::Query::Dialect'],
     sub_name    => 'dialects';
 
-our $VERSION = '0.06';
+our $VERSION = '0.07';
 
 =head1 NAME
 
-Search::Query - polyglot query parsing, with dialects
+Search::Query - polyglot query parsing
 
 =head1 SYNOPSIS
 
@@ -38,7 +38,9 @@ and was then rewritten to provide support for alternate query dialects.
 
 =head2 parser
 
-Returns a Search::Query::Parser object.
+Returns a Search::Query::Parser object. See the documentation
+for L<Search::Query::Parser> for supported query syntax and how
+to customize the Parser.
 
 =cut
 

@@ -5,8 +5,10 @@ lib/Search/Query/Clause.pm
 lib/Search/Query/Dialect.pm
 lib/Search/Query/Dialect/Native.pm
 lib/Search/Query/Dialect/SQL.pm
+lib/Search/Query/Dialect/SWISH.pm
 lib/Search/Query/Field.pm
 lib/Search/Query/Field/SQL.pm
+lib/Search/Query/Field/SWISH.pm
 lib/Search/Query/Parser.pm
 Makefile.PL
 MANIFEST
@@ -16,6 +18,7 @@ t/01-parser.t
 t/02-fields.t
 t/03-clause.t
 t/04-sql.t
+t/05-swish.t
 t/pod-coverage.t
 t/pod.t
 META.yml                                 Module meta-data (added by MakeMaker)

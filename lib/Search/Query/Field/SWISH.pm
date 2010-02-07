@@ -1,28 +1,27 @@
-package Search::Query::Field::SQL;
+package Search::Query::Field::SWISH;
 use strict;
 use warnings;
 use base qw( Search::Query::Field );
 
-__PACKAGE__->mk_accessors(
-    qw( type fuzzy_op fuzzy_not_op is_int ));
+__PACKAGE__->mk_accessors(qw( type is_int ));
 
 our $VERSION = '0.07';
 
 =head1 NAME
 
-Search::Query::Field::SQL - query field representing a database column
+Search::Query::Field::SWISH - query field representing a SWISH MetaName
 
 =head1 SYNOPSIS
 
- my $field = Search::Query::Field::SQL->new( 
+ my $field = Search::Query::Field::SWISH->new( 
     name        => 'foo',
     alias_for   => [qw( bar bing )], 
  );
 
 =head1 DESCRIPTION
 
-Search::Query::Field::SQL implements field
-validation and aliasing in SQL search queries.
+Search::Query::Field::SWISH implements field
+validation and aliasing in SWISH search queries.
 
 =head1 METHODS
 
@@ -37,15 +36,11 @@ Available params are also standard attribute accessor methods.
 
 =item type
 
-The column type.
-
-=item fuzzy_op
-
-=item fuzzy_not_op
+The column type.a
 
 =item is_int
 
-Set if C<type> matches m/int|float|bool|time|date/.
+Set if C<type> matches m/int|num|date/.
 
 =back
 
@@ -58,16 +53,12 @@ sub init {
     $self->{type} ||= 'char';
 
     # numeric types
-    if ( $self->{type} =~ m/int|float|bool|time|date/ ) {
-        $self->{fuzzy_op}     ||= '>=';
-        $self->{fuzzy_not_op} ||= '! >=';
+    if ( $self->{type} =~ m/int|date|num/ ) {
         $self->{is_int} = 1;
     }
 
     # text types
     else {
-        $self->{fuzzy_op}     ||= 'ILIKE';
-        $self->{fuzzy_not_op} ||= 'NOT ILIKE';
         $self->{is_int} = 0;
     }
 

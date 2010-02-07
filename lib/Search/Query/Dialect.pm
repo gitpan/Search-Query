@@ -11,10 +11,11 @@ use overload
 use base qw( Rose::ObjectX::CAF );
 use Data::Transformer;
 use Scalar::Util qw( blessed );
+use Clone;
 
-__PACKAGE__->mk_accessors(qw( default_field _parser ));
+__PACKAGE__->mk_accessors( qw( default_field parser ) );
 
-our $VERSION = '0.06';
+our $VERSION = '0.07';
 
 =head1 NAME
 
@@ -72,12 +73,13 @@ to that of Search::QueryParser.
 
 sub tree {
     my $self = shift;
-    my %tree = %$self;
+    my $copy = Clone::clone($self);    # because D::T is destructive
+    my %tree = %$copy;
     my $transformer;
     $transformer = Data::Transformer->new(
         array => sub {
             for my $obj ( @{ $_[0] } ) {
-                $obj = {%$obj};
+                $obj = ref $obj ? {%$obj} : $obj;
             }
         },
         hash => sub {
@@ -85,6 +87,7 @@ sub tree {
             if ( blessed( $h->{value} ) ) {
                 $h->{value} = $h->{value}->tree;
             }
+            delete $h->{parser};
         },
     );
     $transformer->traverse( \%tree );
@@ -201,6 +204,50 @@ Default is 'Search::Query::Field'.
 sub field_class {
     return 'Search::Query::Field';
 }
+
+sub _get_default_field {
+    my $self = shift;
+    my $field = $self->default_field || $self->parser->default_field;
+    if ( !$field ) {
+        croak "must define a default_field";
+    }
+    return ref $field ? $field : [$field];
+}
+
+sub _get_field {
+    my $self  = shift;
+    my $name  = shift or croak "field name required";
+    my $field = $self->parser->get_field($name);
+    if ( !$field ) {
+        if ( $self->parser->croak_on_error ) {
+            croak "invalid field name: $name";
+        }
+        $field = $self->field_class->new( name => $name );
+    }
+    return $field;
+}
+
+=head2 preprocess( I<query_string> )
+
+Called by Parser in parse() before actually building the Dialect object
+from I<query_string>.
+
+This allows for any "cleaning up" or other munging of I<query_string>
+to support the official Parser syntax.
+
+The default just returns I<query_string> untouched. Subclasses should
+return a parseable string.
+
+=cut
+
+sub preprocess { return $_[1] }
+
+=head2 parser
+
+Returns the Search::Query::Parser object that generated the Dialect
+object.
+
+=cut
 
 1;
 
