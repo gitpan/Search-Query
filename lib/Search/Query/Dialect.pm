@@ -13,13 +13,13 @@ use Data::Transformer;
 use Scalar::Util qw( blessed );
 use Clone;
 
-__PACKAGE__->mk_accessors( qw( default_field parser ) );
+__PACKAGE__->mk_accessors(qw( default_field parser debug ));
 
-our $VERSION = '0.07';
+our $VERSION = '0.08';
 
 =head1 NAME
 
-Search::Query::Dialect - query dialect base class
+Search::Query::Dialect - abstract base class for query language dialects
 
 =head1 SYNOPSIS
 
@@ -51,6 +51,10 @@ See Search::Query::Dialect::Native for a working example.
 
 This class is a subclass of Rose::ObjectX::CAF. Only new or overridden
 methods are documented here.
+
+=head2 debug
+
+Get/set flag.
 
 =head2 default_field
 
@@ -139,6 +143,29 @@ sub walk {
     return $tree;
 }
 
+=head2 translate_to( I<dialect> )
+
+Translate from one Dialect to another. Returns an object
+blessed into the I<dialect> class.
+
+=cut
+
+sub translate_to {
+    my $self        = shift;
+    my $dialect     = shift or croak "Dialect required";
+    my $query_class = Search::Query->get_dialect($dialect);
+    my $new_dialect = bless( Clone::clone($self), $query_class );
+    my $code        = sub {
+        my ( $clause, $tree, $sub, $prefix ) = @_;
+        if ( $clause->is_tree ) {
+            bless( $clause->value, $query_class );
+            $clause->value->walk($sub);
+        }
+    };
+    $new_dialect->walk($code);
+    return $new_dialect;
+}
+
 =head2 add_or_clause( I<clause> )
 
 Add I<clause> as an "or" leaf to the Dialect object.
@@ -208,7 +235,7 @@ sub field_class {
 sub _get_default_field {
     my $self = shift;
     my $field = $self->default_field || $self->parser->default_field;
-    if ( !$field ) {
+    if ( !defined $field ) {
         croak "must define a default_field";
     }
     return ref $field ? $field : [$field];
