@@ -15,7 +15,7 @@ use Clone;
 
 __PACKAGE__->mk_accessors(qw( default_field parser debug ));
 
-our $VERSION = '0.12';
+our $VERSION = '0.13';
 
 =head1 NAME
 
@@ -223,7 +223,13 @@ sub add_sub_clause {
     {
         croak "Dialect object required";
     }
-    push( @{ $self->{"()"} }, $clause );
+    $clause->walk(
+        sub {
+            my ( $subclause, $dialect, $code, $prefix ) = @_;
+            push( @{ $self->{$prefix} }, $subclause );
+        }
+    );
+
 }
 
 =head2 field_class
