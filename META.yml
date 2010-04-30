@@ -1,6 +1,6 @@
 --- #YAML:1.0
 name:               Search-Query
-version:            0.13
+version:            0.14
 abstract:           polyglot query parsing
 author:
     - Peter Karman <karman@cpan.org>

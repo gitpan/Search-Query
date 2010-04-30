@@ -4,8 +4,12 @@ use warnings;
 use Carp;
 use base qw( Rose::ObjectX::CAF );
 use Scalar::Util qw( blessed );
+use overload
+    '""'     => sub { $_[0]->stringify; },
+    'bool'   => sub {1},
+    fallback => 1;
 
-our $VERSION = '0.13';
+our $VERSION = '0.14';
 
 __PACKAGE__->mk_accessors(qw( field op value quote proximity ));
 
@@ -76,6 +80,47 @@ sub has_children {
         }
     );
     return $clauses;
+}
+
+=head2 stringify
+
+Returns Clause as a string. Like Dialect, string-like operators
+are overloaded to call stringify().
+
+NOTE that stringify() is not necessarily called by the parent
+Dialect object when the Dialect object is stringifying itself.
+
+=cut
+
+sub stringify {
+    my $self = shift;
+    if ( $self->is_tree ) {
+        return sprintf( "(%s)", $self->value );
+    }
+    elsif ( $self->proximity ) {
+        return sprintf( "%s%s%s%s%s~%d",
+            $self->field, $self->op,    $self->quote,
+            $self->value, $self->quote, $self->proximity );
+    }
+    elsif ( $self->quote ) {
+        return sprintf( "%s%s%s%s%s",
+            $self->field, $self->op, $self->quote,
+            $self->value, $self->quote );
+    }
+    elsif ( ref $self->value ) {
+        if ( $self->op eq '..' ) {
+            return sprintf( "%s=(%s..%s)",
+                $self->field, $self->value->[0], $self->value->[1] );
+        }
+        elsif ( $self->op eq '!..' ) {
+            return sprintf( "%s!=(%s..%s)",
+                $self->field, $self->value->[0], $self->value->[1] );
+        }
+    }
+    else {
+        return sprintf( "%s%s%s", $self->field, $self->op, $self->value, );
+    }
+
 }
 
 1;

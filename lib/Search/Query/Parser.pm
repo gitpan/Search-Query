@@ -10,7 +10,7 @@ use Search::Query::Clause;
 use Search::Query::Field;
 use Scalar::Util qw( blessed weaken );
 
-our $VERSION = '0.13';
+our $VERSION = '0.14';
 
 __PACKAGE__->mk_accessors(
     qw(
@@ -42,7 +42,7 @@ my %DEFAULT = (
     field_regex => qr/[\.\w]+/,    # match prefix.field: or field
 
     # longest ops first !
-    op_regex => qr/~\d+|==|<=|>=|!=|=~|!~|[:=<>~#]/,
+    op_regex => qr/~\d+|==|<=|>=|!=|!:|=~|!~|[:=<>~#]/,
 
     # ops that admit an empty left operand
     op_nofield_regex => qr/=~|!~|[~:#]/,
@@ -380,6 +380,16 @@ Returns the last error message.
 
 =cut
 
+=head2 clear_error
+
+Sets error message to undef.
+
+=cut
+
+sub clear_error {
+    $_->{error} = undef;
+}
+
 =head2 get_field( I<name> )
 
 Returns Field object for I<name> or undef if there isn't one
@@ -573,9 +583,11 @@ sub _expand {
                         push(
                             @newfields,
                             $class->new(
-                                field => $alias,
-                                op    => $op,
-                                value => $clause->value,
+                                field     => $alias,
+                                op        => $op,
+                                value     => $clause->value,
+                                quote     => $clause->quote,
+                                proximity => $clause->proximity,
                             )
                         );
                     }
