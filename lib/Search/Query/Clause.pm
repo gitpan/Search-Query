@@ -9,7 +9,7 @@ use overload
     'bool'   => sub {1},
     fallback => 1;
 
-our $VERSION = '0.15';
+our $VERSION = '0.16';
 
 __PACKAGE__->mk_accessors(qw( field op value quote proximity ));
 
@@ -118,7 +118,7 @@ sub stringify {
         }
     }
     else {
-        return sprintf( "%s%s%s", $self->field, $self->op, $self->value, );
+        return sprintf( "%s%s%s", ($self->field||''), ($self->op||''), $self->value, );
     }
 
 }
