@@ -10,7 +10,7 @@ use Search::Query::Clause;
 use Search::Query::Field;
 use Scalar::Util qw( blessed weaken );
 
-our $VERSION = '0.18';
+our $VERSION = '0.19';
 
 __PACKAGE__->mk_accessors(
     qw(
@@ -33,6 +33,8 @@ __PACKAGE__->mk_accessors(
         query_class_opts
         croak_on_error
         term_expander
+        sloppy
+        sloppy_term_regex
         )
 );
 
@@ -62,8 +64,9 @@ my %DEFAULT = (
     field_class      => 'Search::Query::Field',
     clause_class     => 'Search::Query::Clause',
     query_class_opts => {},
-    croak_on_error => 0,    # TODO make it stricter
-
+    croak_on_error    => 0,             # TODO make it stricter
+    sloppy            => 0,
+    sloppy_term_regex => qr/[\.\w]+/,
 );
 
 my %SQPCOMPAT = (
@@ -106,6 +109,10 @@ Search::Query::Parser - convert query strings into query objects
     query_class_opts => {
         default_field => 'foo',
     },
+    
+    # a generous mode, overlooking boolean-parser syntax errors
+    sloppy              => 0,
+    sloppy_term_regex   => qr/[\.\w]+/,
  );
 
  my $query = $parser->parse('+hello -world now');
@@ -360,6 +367,25 @@ and should return an array of values.
 The term_expander reference is called internally during the parse() method,
 B<before> any field alias expansion or validation is performed.
 
+=item sloppy( 0|1 )
+
+If the string passed to parse() has any incorrect or unsupported syntax
+in it, the default behavior is for parsing to stop immediately, error()
+to be set, and for parse() to return undef.
+
+In certain cases (as on a web form) this is undesirable. Set sloppy
+mode to true to fallback to non-boolean evaluation of the string,
+which in most cases should still return a Dialect object.
+
+Example:
+
+ $parser->parse('foo -- OR bar');  # if sloppy==0, returns undef
+ $parser->parse('foo -- OR bar');  # if sloppy==1, equivalent to 'foo bar'
+
+=item sloppy_term_regex
+
+The regex definition used to match a term when sloppy==1.
+
 =back
 
 =head2 init
@@ -392,8 +418,11 @@ sub init {
         = Search::Query->get_query_class( $self->{query_class} );
 
     # use field class if query class defines one
-    $self->{field_class} = $self->{query_class}->field_class
-        if $self->{query_class}->field_class;
+    # and we weren't passed one explicitly
+    if ( !$args{field_class} ) {
+        $self->{field_class} = $self->{query_class}->field_class
+            if $self->{query_class}->field_class;
+    }
 
     $self->set_fields( $self->{fields} ) if $self->{fields};
 
@@ -533,11 +562,21 @@ sub parse {
     my $q    = shift;
     croak "query required" unless defined $q;
     my $class = shift || $self->query_class;
+
+    # reset errors in case we are called multiple times
+    $self->{error} = undef;
+
     $q = $class->preprocess($q);
     my ($query) = $self->_parse( $q, undef, undef, $class );
-    if ( !defined $query ) {
+    if ( !defined $query && !$self->sloppy ) {
         croak $self->error if $self->croak_on_error;
         return $query;
+    }
+
+    # if in sloppy mode and we failed to parse,
+    # extract what looks like terms and re-parse.
+    if ( !defined $query && $self->sloppy ) {
+        return $self->_sloppify( $q, $class );
     }
 
     if ( $self->{term_expander} ) {
@@ -548,14 +587,22 @@ sub parse {
         $self->_expand($query);
         $self->_validate($query);
     }
+
+    # if in sloppy mode and we failed to parse,
+    # extract what looks like terms and re-parse.
+    if ( $self->error && $self->sloppy ) {
+        return $self->_sloppify( $q, $class );
+    }
+
     $query->{parser} = $self;
 
     #warn dump $query;
 
     # if the query isn't re-parse-able once stringified
     # then it is broken, somehow.
-    if ( defined $query
-        and !$self->error )
+    if (    defined $query
+        and !$self->error
+        and $self->croak_on_error )
     {
         my ($reparsed) = $self->_parse( "$query", undef, undef, $class );
         if ( !defined $reparsed ) {
@@ -566,6 +613,41 @@ sub parse {
 
     #weaken( $query->{parser} );    # TODO leaks possible?
 
+    return $query;
+}
+
+sub _sloppify {
+    my ( $self, $q, $class ) = @_;
+    my $term  = $self->{sloppy_term_regex};
+    my $and   = $self->{and_regex};
+    my $or    = $self->{or_regex};
+    my $not   = $self->{not_regex};
+    my $near  = $self->{near_regex};
+    my $ops   = $self->{op_regex};
+    my $bools = qr/($and|$or|$not|$near|$ops)/;
+    my @terms;
+
+    while ( $q =~ m/($term)/ig ) {
+        my $t = $1;
+
+        #warn "$t =~ $bools\n";
+        if ( $t =~ m/^$bools$/ ) {
+            next;
+        }
+        push @terms, split( /$ops/, $t );
+    }
+
+    #dump \@terms;
+
+    # reset errors since we will re-parse
+    $self->{error} = undef;
+    my ($query) = $self->_parse( join( ' ', @terms ), undef, undef, $class );
+    if ( !defined $query ) {
+        $self->croak_on_error and croak $self->error;
+    }
+    else {
+        $query->{parser} = $self;
+    }
     return $query;
 }
 
@@ -658,7 +740,9 @@ sub _expand {
                 $clause->value->walk($code);
                 return;
             }
-            if ( !defined $clause->field && !defined $default_field ) {
+            if ( ( !defined $clause->field || !length $clause->field )
+                && !defined $default_field )
+            {
                 return;
             }
             if ( defined $default_field && !defined $clause->field ) {
@@ -668,6 +752,8 @@ sub _expand {
                 }
             }
             my $field_name = $clause->field || $default_field;
+
+            #warn "fields: " . dump($fields) . " field_name==$field_name";
             if ( !exists $fields->{$field_name} ) {
                 return;
             }
@@ -740,15 +826,25 @@ sub _validate {
             $clause->value->walk($code);
         }
         else {
-            return unless defined $clause->field;
+            return unless defined $clause->field and length $clause->field;
             my $field_name  = $clause->field;
             my $field_value = $clause->value;
-            my $field       = $fields->{$field_name}
-                or croak "No such field: $field_name";
+            my $field       = $fields->{$field_name};
+            if ( !$field ) {
+                if ( $self->croak_on_error ) {
+                    croak "No such field: $field_name";
+                }
+                else {
+                    $self->{error} = "No such field: $field_name";
+                    return;
+                }
+            }
             if ( !$field->validate($field_value) ) {
-                my $err = $field->error;
-                croak
-                    "Invalid field value for $field_name: $field_value ($err)";
+                if ( $self->croak_on_error ) {
+                    my $err = $field->error;
+                    croak
+                        "Invalid field value for $field_name: $field_value ($err)";
+                }
             }
         }
     };
