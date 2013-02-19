@@ -47,7 +47,7 @@
       "bugtracker" : {
          "web" : "http://rt.cpan.org/NoAuth/Bugs.html?Dist=Search-Query"
       },
-      "homepage" : "http://perl.peknet.com/wiki/SearchTools",
+      "homepage" : "https://github.com/karpet/search-query-perl",
       "license" : [
          "http://dev.perl.org/licenses/"
       ],
@@ -55,5 +55,5 @@
          "url" : "https://github.com/karpet/search-query-perl"
       }
    },
-   "version" : "0.21"
+   "version" : "0.22"
 }

@@ -5,7 +5,7 @@ use base qw( Search::Query::Dialect );
 use Carp;
 use Data::Dump qw( dump );
 
-our $VERSION = '0.21';
+our $VERSION = '0.22';
 
 =head1 NAME
 
@@ -89,6 +89,12 @@ sub stringify_clause {
                 ( defined $clause->{field} ? $clause->{field} : "" ),
                 '=', '(', $quote, $value, $quote, ')' );
         }
+    }
+
+    # NULL query
+    elsif ( defined $clause->{field} and !defined $value ) {
+        return sprintf( "%s %s NULL",
+            $clause->{field}, ( $clause->{op} eq '=' ? 'is' : 'is not' ) );
     }
     else {
         return join( '',
