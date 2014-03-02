@@ -4,7 +4,7 @@ use warnings;
 use Carp;
 use base qw( Rose::ObjectX::CAF );
 
-our $VERSION = '0.24';
+our $VERSION = '0.25';
 
 __PACKAGE__->mk_accessors(qw( name alias_for callback error ));
 
@@ -40,6 +40,16 @@ Get/set the alternate names for the field. Can be a string or array ref.
 =head2 callback
 
 Standard attribute accessor. Expects a CODE reference.
+
+If defined on a Field object, the callback is invoked whenever a Clause
+is stringified or serialized. The CODE reference should expect 3 arguments:
+the field name, the operator and the value. It should return a serialized
+or serializable value. Example:
+
+ $field->callback(sub {
+     my ($field, $op, $value) = @_;
+     return "$field $op $value";
+ });
 
 =head2 validate( I<field_value> )
 
