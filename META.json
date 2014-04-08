@@ -4,7 +4,7 @@
       "Peter Karman <karman@cpan.org>"
    ],
    "dynamic_config" : 1,
-   "generated_by" : "ExtUtils::MakeMaker version 6.62, CPAN::Meta::Converter version 2.132510",
+   "generated_by" : "ExtUtils::MakeMaker version 6.6302, CPAN::Meta::Converter version 2.120630",
    "license" : [
       "perl_5"
    ],
@@ -35,14 +35,15 @@
             "Data::Dump" : "0",
             "Data::Transformer" : "0",
             "Module::Pluggable" : "0",
-            "Rose::ObjectX::CAF" : "0.03",
+            "Moo" : "0",
             "Scalar::Util" : "0",
             "Test::More" : "0",
+            "namespace::sweep" : "0",
             "perl" : "5.008003"
          }
       }
    },
-   "release_status" : "stable",
+   "release_status" : "testing",
    "resources" : {
       "bugtracker" : {
          "web" : "http://rt.cpan.org/NoAuth/Bugs.html?Dist=Search-Query"
@@ -55,5 +56,5 @@
          "url" : "https://github.com/karpet/search-query-perl"
       }
    },
-   "version" : "0.25"
+   "version" : "0.290_01"
 }

@@ -1,12 +1,15 @@
 package Search::Query::Field;
-use strict;
-use warnings;
+use Moo;
 use Carp;
-use base qw( Rose::ObjectX::CAF );
 
-our $VERSION = '0.25';
+use namespace::sweep;
 
-__PACKAGE__->mk_accessors(qw( name alias_for callback error ));
+our $VERSION = '0.290_01';
+
+has 'name'      => ( is => 'rw' );
+has 'alias_for' => ( is => 'rw' );
+has 'callback'  => ( is => 'rw' );
+has 'error'     => ( is => 'rw' );
 
 =head1 NAME
 
