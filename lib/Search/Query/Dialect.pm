@@ -9,28 +9,31 @@ use overload
 
 use Data::Transformer;
 use Scalar::Util qw( blessed );
-use Types::Standard qw( Int );
-use Type::Utils qw( declare as where inline_as coerce from );
+use Types::Standard qw( Int Undef );
+use Type::Utils qw( declare as where coerce inline_as from );
 use namespace::sweep;
 
 my $PositiveInt = declare
     as Int,
-    where { $_ >= 0 },
-    inline_as {"$_ =~ /^[0-9]\$/ and $_ >= 0"};
+    where { defined($_) and $_ >= 0 },
+    inline_as {"defined($_) and $_ =~ /^[0-9]\$/ and $_ >= 0"};
 
-coerce $PositiveInt, from Int, q{ abs $_ };
+coerce $PositiveInt, from Int, q{ abs( $_ || $ENV{PERL_DEBUG} || 0) },
+    from Undef, q{ 0 };
 
 has default_field => ( is => 'rw' );
 has parser        => ( is => 'ro' );
 has debug         => (
     is      => 'rw',
     isa     => $PositiveInt,
-    coerce  => $PositiveInt->coercion,
     lazy    => 1,
-    builder => sub { $ENV{PERL_DEBUG} || 0 }
+    coerce  => $PositiveInt->coercion,
+    builder => '_init_debug',
 );
 
-our $VERSION = '0.302';
+sub _init_debug { $ENV{PERL_DEBUG} || 0 }
+
+our $VERSION = '0.303';
 
 =head1 NAME
 
