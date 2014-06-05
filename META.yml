@@ -32,4 +32,4 @@ resources:
   homepage: https://github.com/karpet/search-query-perl
   license: http://dev.perl.org/licenses/
   repository: https://github.com/karpet/search-query-perl
-version: '0.303'
+version: '0.304'
